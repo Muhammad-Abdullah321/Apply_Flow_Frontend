@@ -1,0 +1,135 @@
+import { Link, useNavigate } from 'react-router';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+import {
+  Button,
+  Input,
+  PasswordInput,
+  useToast,
+} from '@/components/ui';
+
+import { AppApiError } from '@/types/api';
+import { useAuth } from '../../context/useAuth';
+import {
+  registerSchema,
+  type RegisterFormValues,
+} from '../../schemas/register.schema';
+import { OTP_LENGTH } from '../../schemas/verify-otp.schema';
+
+export function RegisterForm() {
+  const navigate = useNavigate();
+  const { register: registerUser } = useAuth();
+  const { showToast } = useToast();
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<RegisterFormValues>({
+    resolver: zodResolver(registerSchema),
+    mode: 'onTouched',
+    reValidateMode: 'onBlur',
+    defaultValues: {
+      name: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+    },
+  });
+
+  const onSubmit = async (values: RegisterFormValues) => {
+    try {
+      const result = await registerUser(values);
+
+      showToast({
+        variant: 'success',
+        title: 'Verify your email',
+        message: `We sent a ${OTP_LENGTH}-digit code to ${result.data.email}.`,
+      });
+
+      navigate(
+        `/verify-otp?email=${encodeURIComponent(result.data.email)}`,
+        { replace: true },
+      );
+    } catch (error) {
+      if (error instanceof AppApiError) {
+        showToast({ variant: 'error', title: 'Error', message: error.message });
+        return;
+      }
+
+      showToast({
+        variant: 'error',
+        title: 'Registration failed',
+        message: 'Unable to create your account. Please try again.',
+      });
+    }
+  };
+
+  return (
+    <>
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
+        className="space-y-2.5"
+      >
+        <Input
+          label="Full name"
+          type="text"
+          autoComplete="name"
+          placeholder="John Doe"
+          error={errors.name?.message}
+          required
+          {...register('name')}
+        />
+
+        <Input
+          label="Email address"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          error={errors.email?.message}
+          required
+          {...register('email')}
+        />
+
+        <PasswordInput
+          label="Password"
+          autoComplete="new-password"
+          placeholder="Create a password"
+          error={errors.password?.message}
+          required
+          {...register('password')}
+        />
+
+        <PasswordInput
+          label="Confirm password"
+          autoComplete="new-password"
+          placeholder="Confirm your password"
+          error={errors.confirmPassword?.message}
+          required
+          {...register('confirmPassword')}
+        />
+
+        <Button
+          type="submit"
+          fullWidth
+          loading={isSubmitting}
+          size="md"
+        >
+          Create account
+        </Button>
+      </form>
+
+      <p className="mt-2.5 text-center text-sm text-neutral-600">
+        Already have an account?{' '}
+        <Link
+          to="/login"
+          className="font-semibold text-primary-600 hover:text-primary-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 rounded px-1 py-0.5"
+        >
+          Sign in
+        </Link>
+      </p>
+    </>
+  );
+}

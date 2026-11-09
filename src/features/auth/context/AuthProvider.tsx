@@ -1,0 +1,135 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { useNavigate } from 'react-router';
+
+import { authService } from '@/features/auth/services/auth.service';
+import type {
+  LoginInput,
+  RegisterInput,
+  ResendOtpInput,
+  VerifyOtpInput,
+} from '@/features/auth/types/auth.types';
+import type { User } from '@/types';
+
+import { AuthContext } from './AuthContext';
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export function AuthProvider({
+  children,
+}: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
+
+  const refreshSession = useCallback(async () => {
+    try {
+      const response = await authService.getSession();
+      const currentUser = response.data.user ?? null;
+      setUser(currentUser);
+      return currentUser;
+    } catch {
+      setUser(null);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const initializeAuth = async () => {
+      setIsLoading(true);
+      try {
+        await refreshSession();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void initializeAuth();
+  }, [refreshSession]);
+
+  // Listen for session-expiry events fired by the Axios interceptor
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null);
+      navigate('/login', {
+        replace: true,
+        state: { sessionExpired: true },
+      });
+    };
+
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => {
+      window.removeEventListener('auth:session-expired', handleSessionExpired);
+    };
+  }, [navigate]);
+
+  const login = useCallback(
+    async (data: LoginInput) => {
+      const response = await authService.login(data);
+      setUser(response.data.user);
+      return response.data.user;
+    },
+    [],
+  );
+
+  const register = useCallback(
+    async (data: RegisterInput) => {
+      // Account is created but not yet active. No session is issued
+      // until the emailed OTP is verified.
+      return authService.register(data);
+    },
+    [],
+  );
+
+  const verifyOtp = useCallback(
+    async (data: VerifyOtpInput) => {
+      const response = await authService.verifyOtp(data);
+      setUser(response.data.user);
+      return response;
+    },
+    [],
+  );
+
+  const resendOtp = useCallback(
+    async (data: ResendOtpInput) => {
+      return authService.resendOtp(data);
+    },
+    [],
+  );
+
+  const logout = useCallback(async () => {
+    try {
+      await authService.logout();
+    } finally {
+      setUser(null);
+    }
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      user,
+      isAuthenticated: Boolean(user),
+      isLoading,
+      login,
+      register,
+      verifyOtp,
+      resendOtp,
+      logout,
+      refreshSession,
+    }),
+    [user, isLoading, login, register, verifyOtp, resendOtp, logout, refreshSession],
+  );
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
